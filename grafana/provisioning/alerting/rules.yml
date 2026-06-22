@@ -1,0 +1,136 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: data_quality_alerts
+    folder: DSP Alerts
+    interval: 1m
+    rules:
+      - uid: dq_all_errors
+        title: All ingested data has errors
+        condition: C
+        for: 0m
+        labels:
+          team: data_quality
+        annotations:
+          summary: "Over 99% of ingested rows were invalid in the last 10 minutes."
+        noDataState: OK
+        execErrState: OK
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: dsp_postgres
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              rawSql: "SELECT now() AS time, CASE WHEN sum(row_count) > 0 THEN 100.0 * sum(total_errors) / sum(row_count) ELSE 0 END AS value FROM ingestion_errors WHERE created_at > now() - interval '10 minutes'"
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, reducer: last, expression: A }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [99] }
+
+      - uid: dq_error_volume
+        title: High validation error volume
+        condition: C
+        for: 1m
+        labels:
+          team: data_quality
+        annotations:
+          summary: "More than 100 invalid rows were ingested in the last 15 minutes."
+        noDataState: OK
+        execErrState: OK
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1200, to: 0 }
+            datasourceUid: dsp_postgres
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              rawSql: "SELECT now() AS time, COALESCE(sum(total_errors), 0) AS value FROM ingestion_errors WHERE created_at > now() - interval '15 minutes'"
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, reducer: last, expression: A }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [100] }
+
+  - orgId: 1
+    name: ml_alerts
+    folder: DSP Alerts
+    interval: 1m
+    rules:
+      - uid: ml_input_drift
+        title: Significant input drift (home_odds)
+        condition: C
+        for: 2m
+        labels:
+          team: ml
+        annotations:
+          summary: "Serving mean of home_odds drifted >20% from the training baseline (last 15m)."
+        noDataState: OK
+        execErrState: OK
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1200, to: 0 }
+            datasourceUid: dsp_postgres
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              rawSql: "SELECT now() AS time, CASE WHEN base.v IS NULL OR base.v = 0 OR serv.v IS NULL THEN 0 ELSE abs(serv.v - base.v) / base.v * 100 END AS value FROM (SELECT avg((input_data::json->>'home_odds')::float) AS v FROM predictions WHERE created_at > now() - interval '15 minutes') serv, (SELECT value AS v FROM training_feature_stats WHERE is_baseline AND feature_name='home_odds' AND metric='mean' LIMIT 1) base"
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, reducer: last, expression: A }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [20] }
+
+      - uid: ml_constant_predictions
+        title: Model predictions collapsed to a constant
+        condition: C
+        for: 0m
+        labels:
+          team: ml
+        annotations:
+          summary: "The model produced a constant prediction across >=20 predictions in the last 30 minutes."
+        noDataState: OK
+        execErrState: OK
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: dsp_postgres
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              rawSql: "SELECT now() AS time, CASE WHEN count(*) >= 20 AND COALESCE(stddev_pop(prediction), 0) = 0 THEN 1 ELSE 0 END AS value FROM predictions WHERE created_at > now() - interval '30 minutes'"
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, reducer: last, expression: A }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }

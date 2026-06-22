@@ -1,0 +1,19 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: DataQualityTeams
+    receivers:
+      - uid: dq_teams
+        type: teams
+        settings:
+          url: ${DATA_QUALITY_WEBHOOK_URL}
+        disableResolveMessage: false
+  - orgId: 1
+    name: MLTeams
+    receivers:
+      - uid: ml_teams
+        type: teams
+        settings:
+          url: ${ML_ALERTS_WEBHOOK_URL}
+        disableResolveMessage: false

@@ -1,0 +1,153 @@
+{
+  "uid": "dsp_drift_predictions",
+  "title": "Data Drift & Prediction Monitoring",
+  "tags": ["dsp", "ml", "drift"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+        "enable": true,
+        "hide": false,
+        "iconColor": "orange",
+        "name": "Model Retrained",
+        "rawQuery": "SELECT extract(epoch from created_at)*1000 AS time, annotation_text AS text, tags FROM model_annotations WHERE $__timeFilter(created_at) ORDER BY 1",
+        "step": "60s",
+        "useValueForTime": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Input drift — home_odds mean vs training baseline",
+      "description": "Numerical feature. Serving mean of home_odds per 5-min window compared to the champion's training baseline mean.",
+      "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "spanNulls": true } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "baseline_mean" }, "properties": [ { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "gray" } } ] }
+        ]
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '5m'), avg((input_data::json->>'home_odds')::float) AS serving_mean, (SELECT value FROM training_feature_stats WHERE is_baseline AND feature_name='home_odds' AND metric='mean' LIMIT 1) AS baseline_mean FROM predictions WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Input drift — favorite=HOME frequency vs baseline",
+      "description": "Categorical feature (cheapest-odds outcome). Serving frequency of HOME favorite per 10-min window vs training baseline frequency.",
+      "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "spanNulls": true } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "baseline_home_fav_freq" }, "properties": [ { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } }, { "id": "color", "value": { "mode": "fixed", "fixedColor": "gray" } } ] }
+        ]
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '10m'), avg(CASE WHEN (input_data::json->>'home_odds')::float <= (input_data::json->>'draw_odds')::float AND (input_data::json->>'home_odds')::float <= (input_data::json->>'away_odds')::float THEN 1.0 ELSE 0.0 END) AS serving_home_fav_freq, (SELECT value FROM training_feature_stats WHERE is_baseline AND feature_name='favorite' AND category='HOME' AND metric='freq' LIMIT 1) AS baseline_home_fav_freq FROM predictions WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Prediction behavior — home-win rate over time",
+      "description": "Mean predicted class per 5-min window. A flat line at 0 or 1 indicates the model is stuck on one class.",
+      "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit", "min": 0, "max": 1,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15, "spanNulls": true },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 0.1 }, { "color": "red", "value": 0.9 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "tooltip": { "mode": "single" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '5m'), avg(prediction) AS home_win_rate FROM predictions WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Prediction behavior — class counts over time",
+      "description": "Number of predicted home-wins vs non-home-wins per 5-min window (stacked).",
+      "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } } },
+        "overrides": []
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '5m'), sum(CASE WHEN prediction >= 0.5 THEN 1 ELSE 0 END) AS predicted_home_win, sum(CASE WHEN prediction < 0.5 THEN 1 ELSE 0 END) AS predicted_other FROM predictions WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Prediction confidence — mean P(home win) by model version",
+      "description": "Average predicted probability per 5-min window, split by model version so behavior before/after retraining is visible.",
+      "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "spanNulls": true } },
+        "overrides": []
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '5m'), model_version AS metric, avg(proba_home_win) AS confidence FROM predictions WHERE $__timeFilter(created_at) AND proba_home_win IS NOT NULL GROUP BY 1, model_version ORDER BY 1"
+        }
+      ]
+    }
+  ]
+}

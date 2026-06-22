@@ -1,0 +1,172 @@
+{
+  "uid": "dsp_data_quality",
+  "title": "Data Quality Monitoring",
+  "tags": ["dsp", "data-quality"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+        "enable": true,
+        "hide": false,
+        "iconColor": "orange",
+        "name": "Model Retrained",
+        "rawQuery": "SELECT extract(epoch from created_at)*1000 AS time, annotation_text AS text, tags FROM model_annotations WHERE $__timeFilter(created_at) ORDER BY 1",
+        "step": "60s",
+        "useValueForTime": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Invalid row rate per ingestion (%)",
+      "description": "Share of rows rejected in each ingestion. Green <10%, orange 10-50%, red >50%.",
+      "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "spanNulls": true },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 10 },
+              { "color": "red", "value": 50 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+          "rawSql": "SELECT created_at AS time, CASE WHEN row_count > 0 THEN 100.0 * total_errors / row_count ELSE 0 END AS \"invalid_pct\" FROM ingestion_errors WHERE $__timeFilter(created_at) ORDER BY created_at"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Errors by category over time",
+      "description": "The 5 validation categories aggregated per 1-minute window.",
+      "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 60, "stacking": { "mode": "normal" } }
+        },
+        "overrides": []
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '1m'), sum(completeness) AS completeness, sum(validity) AS validity, sum(consistency) AS consistency, sum(schema_errors) AS schema, sum(type_errors) AS type FROM ingestion_errors WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "bargauge",
+      "title": "Total errors per category (selected window)",
+      "description": "Which error categories dominate in the current time range.",
+      "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 50 },
+              { "color": "red", "value": 200 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+          "rawSql": "SELECT sum(completeness) AS completeness, sum(validity) AS validity, sum(consistency) AS consistency, sum(schema_errors) AS schema, sum(type_errors) AS type FROM ingestion_errors WHERE $__timeFilter(created_at)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Ingestions by criticality over time",
+      "description": "Count of ingestions flagged High / Medium / Low per 1-minute window.",
+      "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "normal" } } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "high" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } } ] },
+          { "matcher": { "id": "byName", "options": "medium" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } } ] },
+          { "matcher": { "id": "byName", "options": "low" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } } ] }
+        ]
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '1m'), sum(CASE WHEN criticality='High' THEN 1 ELSE 0 END) AS high, sum(CASE WHEN criticality='Medium' THEN 1 ELSE 0 END) AS medium, sum(CASE WHEN criticality='Low' THEN 1 ELSE 0 END) AS low FROM ingestion_errors WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Recent ingestions",
+      "description": "Most recent ingestion batches with per-category error counts.",
+      "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "datasource": { "type": "postgres", "uid": "dsp_postgres" },
+          "rawSql": "SELECT created_at AS \"time\", file_name, row_count, total_errors, completeness, validity, consistency, schema_errors, type_errors, criticality FROM ingestion_errors WHERE $__timeFilter(created_at) ORDER BY created_at DESC LIMIT 50"
+        }
+      ]
+    }
+  ]
+}

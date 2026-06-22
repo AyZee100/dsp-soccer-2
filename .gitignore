@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Secrets / local config
+.env
+.claude/
+
+# Data pipeline runtime folders (keep the empty dirs via .gitkeep)
+data/raw_data/*
+data/good_data/*
+data/bad_data/*
+data/archived_data/*
+!data/**/.gitkeep
+
+# Defense 2 runtime artifacts
+mlflow-artifacts/
+data/gx_data_docs/*
+!data/gx_data_docs/index.html
+data/.training_cache/
+data/.training_seen
+data/.prediction_state
+
+# Generated documents (personal deliverables — not needed to run the project)
+defense2_slides.pdf
+dsp_soccer_HANDOFF.pdf

@@ -1,0 +1,148 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Creates the dedicated mlflow_db on first init.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+
+  mlflow:
+    build: ./mlflow
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/mlflow_db
+      --artifacts-destination /mlflow/artifacts
+      --serve-artifacts
+      --host 0.0.0.0
+      --port 5000
+    ports:
+      - "5000:5000"
+    volumes:
+      # Defense requirement: artifacts stored locally via a docker volume.
+      - ./mlflow-artifacts:/mlflow/artifacts
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:5000/health').status==200 else sys.exit(1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  model_service:
+    build: ./model_service
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MODEL_NAME=soccer_model
+      - MODEL_ALIAS=champion
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  webapp:
+    build: ./webapp
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://model_service:8000
+    depends_on:
+      model_service:
+        condition: service_healthy
+    restart: unless-stopped
+
+  airflow:
+    image: apache/airflow:3.0.2-python3.12
+    user: "50000:0"
+    command: standalone
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - _PIP_ADDITIONAL_REQUIREMENTS=great_expectations sqlalchemy psycopg2-binary pandas requests mlflow==2.16.2 scikit-learn
+      - TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_URL}
+      - DATA_QUALITY_WEBHOOK_URL=${DATA_QUALITY_WEBHOOK_URL}
+      - ML_ALERTS_WEBHOOK_URL=${ML_ALERTS_WEBHOOK_URL}
+      - AIRFLOW_CONN_POSTGRES_DEFAULT=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - _AIRFLOW_WWW_USER_USERNAME=admin
+      - _AIRFLOW_WWW_USER_PASSWORD=admin
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MODEL_NAME=soccer_model
+      - MODEL_ALIAS=champion
+      - PREDICTION_API_URL=http://model_service:8000/predict
+      - API_BASE_URL=http://model_service:8000
+      - GX_DATA_DOCS_URL=http://localhost:8081
+      - MIN_NEW_FILES_FOR_TRAINING=3
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      # Serves Great Expectations Data Docs (8081 to avoid clashing with Airflow's 8080).
+      - "8081:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./data/gx_data_docs:/usr/share/nginx/html:ro
+    depends_on:
+      - airflow
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_DEFAULT_THEME=light
+      # Webhook URLs used by provisioned Teams contact points.
+      - DATA_QUALITY_WEBHOOK_URL=${DATA_QUALITY_WEBHOOK_URL}
+      - ML_ALERTS_WEBHOOK_URL=${ML_ALERTS_WEBHOOK_URL}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  grafana_data:

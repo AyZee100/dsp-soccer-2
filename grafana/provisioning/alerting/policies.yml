@@ -1,0 +1,13 @@
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: DataQualityTeams
+    group_by: ["grafana_folder", "alertname"]
+    routes:
+      - receiver: DataQualityTeams
+        object_matchers:
+          - ["team", "=", "data_quality"]
+      - receiver: MLTeams
+        object_matchers:
+          - ["team", "=", "ml"]
