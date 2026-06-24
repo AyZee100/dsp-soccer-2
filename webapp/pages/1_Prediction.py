@@ -3,10 +3,19 @@ import streamlit as st
 
 from common import (
     REQUIRED_COLUMNS, api_get, api_post, build_batch_payload,
-    normalize_batch_dataframe, prediction_label, team_name
+    inject_base_css, normalize_batch_dataframe, prediction_label, team_name
 )
 
-st.title("Prediction")
+st.set_page_config(page_title="Prediction", page_icon="🎯", layout="wide")
+inject_base_css()
+
+st.markdown(
+    '<div class="app-hero">'
+    "<h1>🎯 Prediction</h1>"
+    "<p>Predict a single match or score a batch of fixtures from a CSV.</p>"
+    "</div>",
+    unsafe_allow_html=True,
+)
 
 
 @st.cache_data(ttl=60)
@@ -86,10 +95,27 @@ if submit:
             home_o = features.get('home_odds')
             draw_o = features.get('draw_odds')
             away_o = features.get('away_odds')
-            st.write(f"Odds: Home {home_o} | Draw {draw_o} | Away {away_o}")
+            label = prediction_label(row.get('prediction'))
             proba = row.get("proba_home_win")
-            proba_txt = f" (confidence ~ {round(float(proba) * 100)}%)" if proba is not None else ""
-            st.success(f"Prediction: **{prediction_label(row.get('prediction'))}**{proba_txt}")
+
+            res_left, res_right = st.columns([1.3, 1])
+            with res_left:
+                oc = st.columns(3)
+                oc[0].metric("Home odds", f"{home_o}")
+                oc[1].metric("Draw odds", f"{draw_o}")
+                oc[2].metric("Away odds", f"{away_o}")
+                if label == "Home win":
+                    st.success(f"Prediction: **{label}**")
+                else:
+                    st.info(f"Prediction: **{label}**")
+            with res_right:
+                if proba is not None:
+                    pct = max(0.0, min(1.0, float(proba)))
+                    st.metric("Home-win confidence", f"{round(pct * 100)}%")
+                    st.progress(pct)
+                    st.caption("Model-estimated probability of a home win.")
+                else:
+                    st.caption("This model does not expose class probabilities.")
 
             with st.expander("Details (table)"):
                 st.dataframe(preds, use_container_width=True, hide_index=True)
