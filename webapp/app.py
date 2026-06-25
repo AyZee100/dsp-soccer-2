@@ -62,7 +62,11 @@ api_ok = health.get("status") == "healthy"
 model_version = health.get("model_version") or "—"
 model_source = (health.get("model_source") or "unknown").lower()
 
-api_badge = '<span class="badge badge-ok">healthy</span>' if api_ok else '<span class="badge badge-err">unreachable</span>'
+api_badge = (
+    '<span class="badge badge-ok">healthy</span>'
+    if api_ok
+    else '<span class="badge badge-err">unreachable</span>'
+)
 source_accent = PITCH_GREEN if model_source == "mlflow" else AMBER
 source_sub = "MLflow registry @champion" if model_source == "mlflow" else "local fallback (no champion yet)"
 
@@ -96,7 +100,12 @@ else:
         [
             stat_card("Total predictions", f"{len(preds):,}", "most recent 500", SLATE),
             stat_card("Last 24 hours", f"{len(last_24h):,}", "rolling window", PITCH_GREEN),
-            stat_card("Home-win rate", f"{home_rate:.0f}%", "share predicted Home win", AMBER if home_rate > 80 or home_rate < 20 else PITCH_GREEN),
+            stat_card(
+                "Home-win rate",
+                f"{home_rate:.0f}%",
+                "share predicted Home win",
+                AMBER if home_rate > 80 or home_rate < 20 else PITCH_GREEN,
+            ),
             stat_card("Automatic / Manual", f"{auto} / {manual}", "Airflow / Streamlit", SLATE),
         ]
     )
@@ -134,8 +143,18 @@ else:
     render_cards(
         [
             stat_card("Files ingested", f"{len(ingest):,}", "most recent 200", SLATE),
-            stat_card("Overall error rate", f"{err_rate:.1f}%", f"{total_errors:,} / {total_rows:,} rows", criticality_accent("high" if err_rate > 50 else "medium" if err_rate > 10 else None)),
-            stat_card("Last file status", str(latest.get("status", "—")), str(latest.get("file_name", "")), PITCH_GREEN),
+            stat_card(
+                "Overall error rate",
+                f"{err_rate:.1f}%",
+                f"{total_errors:,} / {total_rows:,} rows",
+                criticality_accent("high" if err_rate > 50 else "medium" if err_rate > 10 else None),
+            ),
+            stat_card(
+                "Last file status",
+                str(latest.get("status", "—")),
+                str(latest.get("file_name", "")),
+                PITCH_GREEN,
+            ),
             stat_card("Last criticality", str(last_crit), "latest ingestion run", criticality_accent(last_crit)),
         ]
     )

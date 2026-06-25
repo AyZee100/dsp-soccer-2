@@ -7,7 +7,6 @@ from common import (
     RED,
     SLATE,
     api_get,
-    criticality_accent,
     inject_base_css,
     render_cards,
     stat_card,
