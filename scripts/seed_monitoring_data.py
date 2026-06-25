@@ -112,7 +112,7 @@ def seed_baseline(cur, now):
     cur.execute(
         """INSERT INTO training_runs
            (run_id,model_version,accuracy,f1,inference_ms,n_total,drift_detected,drift_details,promoted,reason,created_at)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         ("seed-run", MODEL_VERSION, 0.61, 0.56, 6.8, 22592, False,
          json.dumps({"drift": False, "reason": "seed"}), True, "bootstrap_first_model",
          now - timedelta(hours=3)),
