@@ -201,10 +201,11 @@ with DAG(
     start_date=datetime(2026, 1, 1),
     schedule="0 2 * * *",  # daily 02:00; also triggered on drift + enough new data
     catchup=False,
+    max_active_runs=1,  # never train concurrently with itself (avoids registry races / OOM)
     tags=["ml", "training"],
 ) as dag:
 
-    @task
+    @task(multiple_outputs=False)
     def load_data() -> dict:
         """Gate the run: require enough NEW good_data files since the last training."""
         pg_hook = PostgresHook(postgres_conn_id="postgres_default")
@@ -244,7 +245,7 @@ with DAG(
             "n_rows": int(len(X)),
         }
 
-    @task
+    @task(multiple_outputs=False)
     def train_model(meta: dict) -> dict:
         """Train candidate, log params/metrics/model to MLflow, register a new version."""
         mlflow = _mlflow()
@@ -298,7 +299,7 @@ with DAG(
             "new_files": meta["new_files"],
         }
 
-    @task
+    @task(multiple_outputs=False)
     def save_training_stats(train_meta: dict) -> dict:
         """Save per-feature baseline stats for the candidate (drift baseline source)."""
         pg_hook = PostgresHook(postgres_conn_id="postgres_default")
@@ -324,7 +325,7 @@ with DAG(
             )
         return {**train_meta, "model_version": model_version}
 
-    @task
+    @task(multiple_outputs=False)
     def evaluate_candidate(train_meta: dict) -> dict:
         """Compare candidate vs champion on the same test set + inference budget."""
         mlflow = _mlflow()
@@ -386,7 +387,7 @@ with DAG(
             "inference_ms": cand_inf,
         }
 
-    @task
+    @task(multiple_outputs=False)
     def promote_to_champion(ev: dict) -> dict:
         """Set @champion alias if evaluation passed; record the run + baseline."""
         from mlflow import MlflowClient
@@ -421,7 +422,8 @@ with DAG(
             raise AirflowSkipException(f"Not promoted: {ev['reason']}")
 
         # Promote: set alias + make this model's stats the only drift baseline.
-        client.set_registered_model_alias(MODEL_NAME, MODEL_ALIAS, ev["version"])
+        # MLflow's registry API expects the version as a string, not an int.
+        client.set_registered_model_alias(MODEL_NAME, MODEL_ALIAS, str(ev["version"]))
         pg_hook.run("UPDATE training_feature_stats SET is_baseline = FALSE;")
         pg_hook.run(
             "UPDATE training_feature_stats SET is_baseline = TRUE WHERE model_version = %s;",

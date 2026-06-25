@@ -3,11 +3,19 @@ from datetime import datetime, time
 import pandas as pd
 import streamlit as st
 
-from common import api_get, prediction_label, team_name
+from common import api_get, inject_base_css, prediction_label, team_name
 
 
-st.title("Past Predictions")
-st.caption("Readable prediction history for non-technical users.")
+st.set_page_config(page_title="Past Predictions", page_icon="📜", layout="wide")
+inject_base_css()
+
+st.markdown(
+    '<div class="app-hero">'
+    "<h1>📜 Past Predictions</h1>"
+    "<p>Readable prediction history for non-technical users.</p>"
+    "</div>",
+    unsafe_allow_html=True,
+)
 
 controls = st.columns([1.1, 1, 1, 1, 1.2])
 with controls[0]:
